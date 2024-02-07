@@ -1,0 +1,181 @@
+---
+title: "Time Series - Final Project"
+author: "by Krystian Bułat, Agnieszka Tracz, Karolina Grzech and Zuzanna Maciszewska"
+date: ' '
+---
+
+------------------------------------------------------------------------
+
+**You have two tasks below:**
+
+------------------------------------------------------------------------
+
+# TASK 1:
+
+Consider the monthly *sales of products* (see file dane_KKAZ.csv at UPeL)).
+
+1.  Make *sales of products* forecasts for each month of the year 2024.
+
+------------------------------------------------------------------------
+
+## SOLUTION of TASK 1
+
+We are loading our data, which consists of 4 columns and 108 observations. The first column pertains to the observation index, the next two are associated with dates, and the last one contains information about sales. In this process, we add an additional column containing complete date information (day and month), and then proceed to remove the initial three columns from our database.
+
+```{r}
+library(readxl)
+dane <- read.csv("dane_KKAZ.csv")
+
+plot(dane)
+
+dane$data <- paste(dane$MM, dane$Y)
+
+dane1 <- dane[,5:4]
+
+summary(dane1)
+```
+
+We are creating a time series composed of date and sales, and then plotting its graph.
+
+```{r}
+TS <- ts(dane1$sales , start = c(2015,1), end = c(2023,12) ,frequency=12 )
+
+plot(TS)
+```
+
+The variance in our time series does not exhibit significant growth, so there is no necessity to apply the Box-Cox transformation. However we can see trends and seasonality in the data, we decided to choose a period based on the nature of our data, so here period=year
+
+In the next step, we use the diff function to eliminate the seasonality from our data.
+
+```{r}
+D12<-diff(TS,lag=12)
+plot(D12)
+
+```
+
+The seasonality has been successfully removed, so D=1. We are plotting the autocorrelation function (ACF) and partial autocorrelation function (PACF) graphs for deseasonalized time series.
+
+```{r}
+par(mfrow=c(1,2))
+LagMax<-48
+acf(na.omit(D12), lag.max=LagMax) #Watch out for missing data
+pacf(na.omit(D12), lag.max=LagMax) #Watch out for missing data
+
+```
+
+They are similar to the theoretical ACF and PACF of SARIMA models, the sample ACF tends to zero so it may suggest d=0, so we will consider ARIMA(p,0,q)x(P,1,Q)12
+
+Seasonsal Component: It seems that at the seasons, the sample ACF and PACF are cutting off at lag 1s (s = 12). Therefore, we can try the pairs: P=1& Q=0; P=0& Q=1; P=1& Q=1.
+
+Non-SeasonsalComponent: At the lower lags, the sample ACF and PACF are tailing off. Since we prefer the low number of parameters we can try p=q=1
+
+```{r}
+library(astsa)
+model_1 <- sarima(TS,1,0,1,1,1,0,12)# p,d,q, P,D,Q, s
+model_2 <- sarima(TS,1,0,1,0,1,1,12)
+model_3 <- sarima(TS,1,0,1,1,1,1,12)
+
+c(model_1$AIC, model_1$AICc,model_1$BIC)
+c(model_2$AIC, model_2$AICc,model_2$BIC)
+c(model_3$AIC, model_3$AICc,model_3$BIC);
+
+model_1$ttable
+model_2$ttable
+model_3$ttable
+```
+
+We can see that all the metrics prefer the first model, so our final fit is ARIMA(1,0,1)×(1,1,0)12
+
+```{r}
+pred<-sarima.for(TS,n.ahead=12,1,0,1,1,1,0,12)
+```
+
+```{r}
+
+```
+
+{r}
+
+------------------------------------------------------------------------
+
+# TASK 2:
+
+Consider the [Krystian's time series from Lab 1 task 4.2](https://upel.agh.edu.pl/mod/forum/discuss.php?d=8847) ( Netflix Stock Price)
+
+1.  Make all necessary transformations to get a stationary time series (noise).\
+2.  If possible, choose the ARMA (p, q) model for stationary noise.
+
+------------------------------------------------------------------------
+
+## SOLUTION of TASK 2
+
+We are loading our data. The dataset comprises 7 columns and consists of 1007 observations. The first column contains date information, while the fifth column represents the 'close' values. In our analysis, we will construct a time series based on these two columns.
+
+```{r}
+dane <- read.csv("NFLX.csv")
+TS <- dane[, c(1,5)]
+
+```
+
+```{r}
+TS <- ts(TS$Close, start = c(2015, 241), end = c(2019,  239), frequency = 252)
+plot(TS)
+```
+
+```{r}
+library(tseries)
+adf.test(TS)
+
+
+```
+
+The p-value is greater than 0.05, so we cannot reject the null hypothesis, indicating that the time series is non-stationary.
+
+We utilize the 'decompose' function to decompose the time series, separating it into its individual components such as trend, seasonality, and remainder.
+
+```{r}
+decomposed <- decompose(TS)
+plot(decomposed)
+
+```
+
+The increasing variance observed in the above plot indicates the need for a Box-Cox transformation. Employing Box-Cox helps stabilize the variance, a crucial step in achieving a more stationary and predictable time series.
+
+```{r}
+library(forecast)
+
+lambda <- BoxCox.lambda(TS,lower=0)
+lambda
+BC <- BoxCox(TS,lambda)
+plot(BC)
+```
+
+We can observe the presence of a trend in the data. We apply the 'diff' function to compute differences between consecutive values, aiming to remove the trend component and make the time series more stationary for further analysis.
+
+```{r}
+D1<-diff(BC,lag=1)
+plot(D12)
+
+```
+
+```{r}
+adf.test(D1)
+```
+
+The obtained p-value is now equal to 0.01, so we reject the null hypothesis of non-stationarity. 
+
+We can proceed to the analysis of ACF and PACF.
+
+```{r}
+
+par(mfrow=c(1,2))
+LagMax<-50
+acf(na.omit(D1), lag.max=LagMax) 
+pacf(na.omit(D1), lag.max=LagMax) 
+
+
+```
+
+------------------------------------------------------------------------
+
+The PACF seems to be cut off after lag 5 and ACF has tails off, so we decide to choose AR(5).
